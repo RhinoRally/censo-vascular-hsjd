@@ -43,21 +43,19 @@
         function App() {
             const [usuario, setUsuario] = useState(null);
             const [pinInput, setPinInput] = useState("");
-            const [pinActualConfig, setPinActualConfig] = useState("1234"); // PIN por defecto
+            const [pinActualConfig, setPinActualConfig] = useState("1234");
             const [medicoSeleccionado, setMedicoSeleccionado] = useState("");
             const [camas, setCamas] = useState([]);
             const [camaSeleccionada, setCamaSeleccionada] = useState(null);
-            const [vistaActual, setVistaActual] = useState("listado"); // "listado" | "edicion" | "reportes" | "imprimir" | "cambiar_pin"
+            const [vistaActual, setVistaActual] = useState("listado"); 
             const [busqueda, setBusqueda] = useState("");
             const [estadoSeleccionado, setEstadoSeleccionado] = useState("");
             const [gestionandoMedicos, setGestionandoMedicos] = useState(false);
             
-            // Campos para cambio de PIN
             const [pinViejoInput, setPinViejoInput] = useState("");
             const [pinNuevoInput, setPinNuevoInput] = useState("");
             const [pinConfirmarInput, setPinConfirmarInput] = useState("");
 
-            // Filtros de fecha para reportes
             const [fechaInicioRep, setFechaInicioRep] = useState("");
             const [fechaFinRep, setFechaFinRep] = useState("");
 
@@ -109,20 +107,16 @@
                 { numeroCama: "566", salon: "Cirugía Hombres", tipoCama: "Propia Aorta", estadoCama: "Libre", paciente: "", idPaciente: "" }
             ];
 
-            // Sincronizar PIN y Camas desde Firebase en tiempo real
             useEffect(() => {
                 if (window.fb) {
-                    // Cargar PIN configurado en Firestore
                     const unsubConfig = window.fb.onSnapshot(window.fb.doc(window.db, "config", "seguridad"), (docSnap) => {
                         if (docSnap.exists() && docSnap.data().pin) {
                             setPinActualConfig(docSnap.data().pin);
                         } else {
-                            // Crear configuración inicial con "1234" si no existe
                             window.fb.setDoc(window.fb.doc(window.db, "config", "seguridad"), { pin: "1234" });
                         }
                     });
 
-                    // Cargar camas
                     const unsubCamas = window.fb.onSnapshot(window.fb.collection(window.db, "camas_vascular"), (snapshot) => {
                         const camasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         if (camasData.length === 0) {
@@ -382,21 +376,32 @@
 
             return (
                 <div className="min-h-screen bg-gray-100 flex flex-col">
-                    {/* Barra Superior estilo Power Apps */}
-                    <header className="bg-[#0078D4] text-white p-4 shadow flex justify-between items-center no-print">
-                        <div className="flex items-center gap-4">
-                            <h1 className="text-xl font-bold tracking-wide">Censo_Camas_Vascular</h1>
-                            <div className="flex gap-2">
-                                <button onClick={() => setVistaActual("listado")} className={`px-3 py-1.5 rounded text-sm font-bold ${vistaActual === 'listado' ? 'bg-white/20' : 'hover:bg-white/10'}`}>Censo Activo</button>
-                                <button onClick={() => setVistaActual("reportes")} className={`px-3 py-1.5 rounded text-sm font-bold ${vistaActual === 'reportes' ? 'bg-white/20' : 'hover:bg-white/10'}`}>Analítica y Reportes</button>
-                                <button onClick={() => setVistaActual("imprimir")} className={`px-3 py-1.5 rounded text-sm font-bold ${vistaActual === 'imprimir' ? 'bg-white/20' : 'hover:bg-white/10'}`}>Vista Imprimir / PDF</button>
-                                <button onClick={() => setVistaActual("cambiar_pin")} className={`px-3 py-1.5 rounded text-sm font-bold ${vistaActual === 'cambiar_pin' ? 'bg-white/20' : 'hover:bg-white/10'}`}>Cambiar PIN</button>
+                    {/* BARRA SUPERIOR EN DOS FILAS */}
+                    <header className="bg-[#0078D4] text-white shadow no-print">
+                        {/* Fila Principal: Título, Médico activo y Salir */}
+                        <div className="p-3 px-4 flex justify-between items-center border-b border-white/10">
+                            <h1 className="text-lg font-bold tracking-wide">Censo_Camas_Vascular</h1>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs bg-white/15 px-2.5 py-1 rounded font-medium">Dr(a). {usuario}</span>
+                                <button onClick={() => { setUsuario(null); setPinInput(""); }} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs font-bold transition shadow-sm">
+                                    Salir
+                                </button>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                            <span className="text-sm bg-white/10 px-3 py-1 rounded">Dr(a). {usuario}</span>
-                            <button onClick={() => { setUsuario(null); setPinInput(""); }} className="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-bold transition">
-                                Salir
+
+                        {/* Segunda Fila: Navegación de Secciones (Scroll horizontal en móviles) */}
+                        <div className="bg-gray-800 px-3 py-2 flex gap-2 overflow-x-auto text-xs font-semibold">
+                            <button onClick={() => setVistaActual("listado")} className={`px-3 py-1.5 rounded transition whitespace-nowrap ${vistaActual === 'listado' ? 'bg-[#0078D4] text-white shadow' : 'text-gray-300 hover:bg-gray-700'}`}>
+                                📋 Censo Activo
+                            </button>
+                            <button onClick={() => setVistaActual("reportes")} className={`px-3 py-1.5 rounded transition whitespace-nowrap ${vistaActual === 'reportes' ? 'bg-[#0078D4] text-white shadow' : 'text-gray-300 hover:bg-gray-700'}`}>
+                                📊 Analítica y Reportes
+                            </button>
+                            <button onClick={() => setVistaActual("imprimir")} className={`px-3 py-1.5 rounded transition whitespace-nowrap ${vistaActual === 'imprimir' ? 'bg-[#0078D4] text-white shadow' : 'text-gray-300 hover:bg-gray-700'}`}>
+                                🖨️ Vista Imprimir / PDF
+                            </button>
+                            <button onClick={() => setVistaActual("cambiar_pin")} className={`px-3 py-1.5 rounded transition whitespace-nowrap ${vistaActual === 'cambiar_pin' ? 'bg-[#0078D4] text-white shadow' : 'text-gray-300 hover:bg-gray-700'}`}>
+                                🔑 Cambiar PIN
                             </button>
                         </div>
                     </header>
