@@ -9,14 +9,13 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="bg-gray-100">
+<body class="bg-slate-100">
     <div id="root"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
         import { getFirestore, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
-        // === FIREBASE CONFIGURACIÓN INTEGRADA ===
         const firebaseConfig = {
           apiKey: "AIzaSyD6cmfArqhgLdW0dn_NAIT9CUMBcT5rW1U",
           authDomain: "censo-vascular-hsjd.firebaseapp.com",
@@ -25,7 +24,6 @@
           messagingSenderId: "330248761061",
           appId: "1:330248761061:web:852e3b43fec2f8b83fae0c"
         };
-        // =====================================
 
         const app = initializeApp(firebaseConfig);
         window.db = getFirestore(app);
@@ -40,144 +38,345 @@
             const [pinInput, setPinInput] = useState("");
             const [medicoSeleccionado, setMedicoSeleccionado] = useState("");
             const [camas, setCamas] = useState([]);
-            const [camaActiva, setCamaActiva] = useState(null); // null = listado, {} = nueva, {...} = editando
+            const [camaActiva, setCamaActiva] = useState(null);
+            const [estadoSeleccionado, setEstadoSeleccionado] = useState("");
+            const [nuevoDiagnostico, setNuevoDiagnostico] = useState("");
+            const [nuevoServicio, setNuevoServicio] = useState("");
+            const [gestionandoMedicos, setGestionandoMedicos] = useState(false);
             
-            // Catálogo actualizado
-            const medicos = ["Dr. Rojas (Jefatura a.i.)", "Dr. Cabezas", "Dr. Asistente 1", "Dra. Residente 1", "Dr. Residente 2"];
-            const servicios = ["Cirugía General", "Ortopedia", "Medicina Interna", "Emergencias", "Urología", "Neurocirugía", "Ginecología"];
+            // Lista de médicos ordenada alfabéticamente según solicitud
+            const [medicos, setMedicos] = useState([
+                "Dr. Cabezas Loría",
+                "Dr. Castillo Amoretti",
+                "Dr. Cruz Guzmán",
+                "Dr. Giraldo Noguera",
+                "Dra. Herrera Garrido",
+                "Dra. Leitón Solano",
+                "Dra. Méndez Marín",
+                "Dr. Meza Aguilar",
+                "Dra. Min Kim",
+                "Dr. Moreno Arroyo",
+                "Dr. Rojas Vázquez",
+                "Dra. Rodríguez Rojas",
+                "Dra. Sandí Ovares",
+                "Dr. Sandoval Alfaro",
+                "Dra. Secades Mesén",
+                "Dra. Zúñiga Villegas"
+            ]);
+            const [nuevoMedicoInput, setNuevoMedicoInput] = useState("");
+
             const PIN_CORRECTO = "1234"; 
 
-            // Conexión a Firebase para lectura en tiempo real
+            const salonesLista = [
+                "Cirugía Mujeres", "Cirugía Hombres", "UEQ", "Urología", 
+                "Oncología Mujeres", "Oncología Hombres", "Ortopedia", 
+                "UCI Central", "UCI Qx", "UCI Neura", "Ginecología", "Medicina"
+            ];
+
+            const serviciosBase = [
+                "UEQ", "Ortopedia", "Urología", "Cirugía General", 
+                "Cirugía Tórax", "Neurocirugía", "Cirugía Cardíaca", 
+                "Cirugía Plástica", "ORL", "Oftalmología", "Otro"
+            ];
+
+            const diagnosticosBase = [
+                "Pie Diabético", "Aneurisma de Aorta", "Isquemia Aguda", 
+                "Isquemia Crónica", "Trombosis Venosa Profunda aguda", 
+                "Trauma Vascular", "Tromboembolismo Pulmonar", 
+                "Acceso Vascular Hemodiálisis", "Várices Miembros inferiores", 
+                "Opérculo Torácico", "Trombosis Venosa Profunda crónica", "Otro"
+            ];
+
+            const motivosInhabilitacion = [
+                "Aislamiento por brote infeccioso", 
+                "Remodelación/Mantenimiento", 
+                "Avería de mobiliario", 
+                "Limpieza/Desinfección"
+            ];
+
+            // 10 Camas Propias obligatorias de Vascular
+            const camasInicialesVascular = [
+                { numeroCama: "607", salon: "Cirugía Mujeres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "608", salon: "Cirugía Mujeres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "609", salon: "Cirugía Mujeres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "610", salon: "Cirugía Mujeres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "611", salon: "Cirugía Mujeres", tipoCama: "Propia Aorta", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "562", salon: "Cirugía Hombres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "563", salon: "Cirugía Hombres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "564", salon: "Cirugía Hombres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "565", salon: "Cirugía Hombres", tipoCama: "Propia Regular", estadoCama: "Libre", paciente: "", idPaciente: "" },
+                { numeroCama: "566", salon: "Cirugía Hombres", tipoCama: "Propia Aorta", estadoCama: "Libre", paciente: "", idPaciente: "" }
+            ];
+
             useEffect(() => {
                 if (usuario && window.fb) {
-                    const unsubscribe = window.fb.onSnapshot(window.fb.collection(window.db, "camas"), (snapshot) => {
+                    const unsubscribe = window.fb.onSnapshot(window.fb.collection(window.db, "camas_vascular"), (snapshot) => {
                         const camasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        setCamas(camasData);
+                        if (camasData.length === 0) {
+                            camasInicialesVascular.forEach(async (cama) => {
+                                await window.fb.addDoc(window.fb.collection(window.db, "camas_vascular"), {
+                                    ...cama,
+                                    ultimoUsuario: "Sistema"
+                                });
+                            });
+                        } else {
+                            setCamas(camasData);
+                        }
                     });
                     return () => unsubscribe();
                 }
             }, [usuario]);
+
+            // Cálculo automático de días pre y postoperatorios
+            const calcularDiasQuirurgicos = (fechaIngreso, fechaCirugia) => {
+                if (!fechaIngreso) return { diasPreOp: 0, diasPostOp: 0 };
+                const hoy = new Date();
+                hoy.setHours(0,0,0,0);
+                const ingreso = new Date(fechaIngreso);
+                ingreso.setHours(0,0,0,0);
+
+                // Regla: el primer día de ingreso es el día 1 de internamiento (diferencia en días + 1)
+                const diffIngresoMs = hoy - ingreso;
+                const diasEstanciaTotal = Math.max(1, Math.floor(diffIngresoMs / (1000 * 60 * 60 * 24)) + 1);
+
+                if (!fechaCirugia) {
+                    return { diasPreOp: diasEstanciaTotal, diasPostOp: 0 };
+                }
+
+                const cirugia = new Date(fechaCirugia);
+                cirugia.setHours(0,0,0,0);
+
+                if (hoy < cirugia) {
+                    // Aún no es el día de cirugía
+                    const diffPre = Math.floor((hoy - ingreso) / (1000 * 60 * 60 * 24)) + 1;
+                    return { diasPreOp: Math.max(1, diffPre), diasPostOp: 0 };
+                } else if (hoy.getTime() === cirugia.getTime()) {
+                    // Hoy es el día de la cirugía (día 0 post-op, pre-op cuenta hasta ayer)
+                    const diffPre = Math.floor((cirugia - ingreso) / (1000 * 60 * 60 * 24));
+                    return { diasPreOp: Math.max(0, diffPre), diasPostOp: 0 };
+                } else {
+                    // Post-operatorio: el primer día postqx es el día inmediato después
+                    const diffPre = Math.floor((cirugia - ingreso) / (1000 * 60 * 60 * 24));
+                    const diffPost = Math.floor((hoy - cirugia) / (1000 * 60 * 60 * 24));
+                    return { diasPreOp: Math.max(0, diffPre), diasPostOp: Math.max(1, diffPost) };
+                }
+            };
 
             const guardarCama = async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 const datos = Object.fromEntries(formData.entries());
                 
-                datos.diasPreOp = Number(datos.diasPreOp);
-                datos.diasPostOp = Number(datos.diasPostOp);
+                if (datos.diagnostico === "Otro") datos.diagnostico = nuevoDiagnostico;
+                if (datos.servicioInvasor === "Otro") datos.servicioInvasor = nuevoServicio;
+
+                // Calcular días automáticamente
+                const calculo = calcularDiasQuirurgicos(datos.fechaIngresoSalon, datos.fechaPrimeraCirugia);
+                datos.diasPreOp = calculo.diasPreOp;
+                datos.diasPostOp = calculo.diasPostOp;
+
                 datos.ultimoUsuario = usuario;
                 datos.ultimaActualizacion = window.fb.serverTimestamp();
 
                 try {
                     if (camaActiva.id) {
-                        await window.fb.setDoc(window.fb.doc(window.db, "camas", camaActiva.id), datos, { merge: true });
+                        await window.fb.setDoc(window.fb.doc(window.db, "camas_vascular", camaActiva.id), datos, { merge: true });
                     } else {
-                        await window.fb.addDoc(window.fb.collection(window.db, "camas"), datos);
+                        await window.fb.addDoc(window.fb.collection(window.db, "camas_vascular"), datos);
                     }
                     setCamaActiva(null);
                 } catch (error) {
-                    alert("Error al guardar: Verifique la conexión a la base de datos.");
+                    alert("Error al guardar en la base de datos.");
                     console.error(error);
                 }
             };
 
-            const eliminarCama = async (id) => {
-                if(confirm("¿Está seguro de liberar/eliminar esta cama del censo?")) {
-                    await window.fb.deleteDoc(window.fb.doc(window.db, "camas", id));
+            const eliminarCama = async (id, tipoCama) => {
+                if (tipoCama && tipoCama.includes("Propia")) {
+                    alert("Las camas propias de Vascular no se pueden eliminar, únicamente modificar o liberar su estado.");
+                    return;
+                }
+                if (confirm("¿Está seguro de eliminar esta cama de invasión ejercida?")) {
+                    await window.fb.deleteDoc(window.fb.doc(window.db, "camas_vascular", id));
+                }
+            };
+
+            const obtenerColorEstado = (estado) => {
+                switch(estado) {
+                    case "Ocupada por Vascular": return "bg-[#cfe2f3] border-blue-400 text-blue-950";
+                    case "Invasión Ejercida por Vascular": return "bg-[#cbf7f7] border-cyan-400 text-cyan-950";
+                    case "Invadida por otro servicio": return "bg-[#d9ead3] border-emerald-400 text-emerald-950";
+                    case "Libre": return "bg-[#fff2cc] border-yellow-400 text-yellow-950";
+                    case "Desocupada": return "bg-[#f4cccc] border-pink-400 text-pink-950";
+                    case "Inhabilitada": return "bg-[#fce5cd] border-orange-400 text-orange-950";
+                    default: return "bg-white border-gray-300 text-gray-900";
                 }
             };
 
             if (!usuario) {
                 return (
-                    <div className="flex items-center justify-center min-h-screen bg-slate-800">
-                        <div className="bg-white p-8 rounded-lg shadow-lg w-96 text-center">
-                            <h1 className="text-2xl font-bold mb-2 text-blue-900">Hospital San Juan de Dios</h1>
-                            <h2 className="text-lg mb-6 text-gray-600">Censo Cirugía Vascular</h2>
+                    <div className="flex items-center justify-center min-h-screen bg-slate-900 p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
+                            <h1 className="text-xl font-bold mb-1 text-blue-900 text-center">Hospital San Juan de Dios</h1>
+                            <h2 className="text-md font-semibold mb-6 text-gray-600 text-center">Censo Cirugía Vascular</h2>
                             
-                            <select className="w-full p-2 mb-4 border rounded" value={medicoSeleccionado} onChange={(e) => setMedicoSeleccionado(e.target.value)}>
+                            <div className="mb-4 flex justify-between items-center">
+                                <label className="text-sm font-bold text-gray-700">Seleccione Médico:</label>
+                                <button onClick={() => setGestionandoMedicos(!gestionandoMedicos)} className="text-xs text-blue-600 font-semibold hover:underline">
+                                    {gestionandoMedicos ? "Ocultar gestión" : "Gestionar médicos (Rotaciones)"}
+                                </button>
+                            </div>
+
+                            {gestionandoMedicos && (
+                                <div className="mb-4 p-3 bg-gray-50 rounded-lg border text-sm">
+                                    <p className="text-xs text-gray-500 mb-2">Agregue o elimine médicos para las rotaciones mensuales:</p>
+                                    <div className="flex gap-2 mb-2">
+                                        <input type="text" placeholder="Ej. Dr. Nuevo Médico" value={nuevoMedicoInput} onChange={(e) => setNuevoMedicoInput(e.target.value)} className="w-full p-1.5 border rounded text-xs" />
+                                        <button onClick={() => {
+                                            if(nuevoMedicoInput.trim()) {
+                                                const actualizado = [...medicos, nuevoMedicoInput.trim()].sort();
+                                                setMedicos(actualizado);
+                                                setNuevoMedicoInput("");
+                                            }
+                                        }} className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold">+</button>
+                                    </div>
+                                    <div className="max-h-32 overflow-y-auto space-y-1">
+                                        {medicos.map((m, idx) => (
+                                            <div key={idx} className="flex justify-between items-center bg-white p-1 rounded border text-xs">
+                                                <span>{m}</span>
+                                                <button onClick={() => setMedicos(medicos.filter(item => item !== m))} className="text-red-600 font-bold px-1">×</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <select className="w-full p-3 mb-4 border rounded-lg bg-gray-50" value={medicoSeleccionado} onChange={(e) => setMedicoSeleccionado(e.target.value)}>
                                 <option value="">Seleccione Médico...</option>
                                 {medicos.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
 
-                            <input type="password" placeholder="PIN de 4 dígitos" className="w-full p-2 mb-4 border rounded text-center tracking-widest text-lg" maxLength="4" value={pinInput} onChange={(e) => setPinInput(e.target.value)} />
+                            <input type="password" placeholder="PIN de 4 dígitos" className="w-full p-3 mb-6 border rounded-lg text-center tracking-widest text-lg bg-gray-50" maxLength="4" value={pinInput} onChange={(e) => setPinInput(e.target.value)} />
 
-                            <button className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700"
+                            <button className="w-full bg-blue-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-800 transition"
                                 onClick={() => {
                                     if(medicoSeleccionado && pinInput === PIN_CORRECTO) setUsuario(medicoSeleccionado);
                                     else alert("PIN incorrecto o médico no seleccionado");
                                 }}>
-                                Entrar al Censo
+                                Ingresar al Censo
                             </button>
                         </div>
                     </div>
                 );
             }
 
-            // Vista del Formulario Modal (Agregar/Editar)
             if (camaActiva) {
                 return (
-                    <div className="p-4 max-w-2xl mx-auto">
-                        <div className="bg-white p-6 rounded shadow">
-                            <h2 className="text-2xl font-bold mb-4">{camaActiva.id ? "Editar Cama" : "Nueva Cama"}</h2>
+                    <div className="p-4 max-w-3xl mx-auto">
+                        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                            <h2 className="text-2xl font-bold mb-4 text-blue-900">{camaActiva.id ? "Editar Cama" : "Registrar Cama de Invasión Ejercida"}</h2>
                             <form onSubmit={guardarCama} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 
                                 <div>
-                                    <label className="block text-sm font-bold mb-1">Número de Cama / Ubicación</label>
-                                    <input name="numeroCama" defaultValue={camaActiva.numeroCama} required className="w-full p-2 border rounded" placeholder="Ej. 401 - Salón Hombres" />
+                                    <label className="block text-sm font-bold mb-1">Número de Cama</label>
+                                    <input name="numeroCama" defaultValue={camaActiva.numeroCama} required className="w-full p-2 border rounded-lg" placeholder="Ej. 401" />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-bold mb-1">Estado de Ocupación (Invasiones)</label>
-                                    <select name="estadoInvasion" defaultValue={camaActiva.estadoInvasion || "Propia de Vascular"} className="w-full p-2 border rounded">
-                                        <option value="Propia de Vascular">Propia de Vascular (Ocupada por Vascular)</option>
-                                        <option value="Invasión Recibida">Invasión Recibida (Cama nuestra, otro servicio)</option>
-                                        <option value="Invasión Ejercida">Invasión Ejercida (Cama ajena, pte. nuestro)</option>
+                                    <label className="block text-sm font-bold mb-1">Salón</label>
+                                    <select name="salon" defaultValue={camaActiva.salon || salonesLista[0]} className="w-full p-2 border rounded-lg">
+                                        {salonesLista.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-bold mb-1">Servicio Involucrado (Si hay invasión)</label>
-                                    <select name="servicioInvolucrado" defaultValue={camaActiva.servicioInvolucrado || "N/A"} className="w-full p-2 border rounded">
-                                        <option value="N/A">N/A</option>
-                                        {servicios.map(s => <option key={s} value={s}>{s}</option>)}
+                                    <label className="block text-sm font-bold mb-1">Tipo de Cama</label>
+                                    <select name="tipoCama" defaultValue={camaActiva.tipoCama || "Invasión Ejercida"} className="w-full p-2 border rounded-lg">
+                                        <option value="Propia Regular">Propia Regular</option>
+                                        <option value="Propia Aorta">Propia Aorta</option>
+                                        <option value="Invasión Ejercida">Invasión Ejercida (Ocupamos cama ajena)</option>
                                     </select>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-bold mb-1">Origen de Ingreso</label>
-                                    <select name="origen" defaultValue={camaActiva.origen || "Emergencias"} className="w-full p-2 border rounded">
+                                    <label className="block text-sm font-bold mb-1">Estado de Cama</label>
+                                    <select name="estadoCama" defaultValue={camaActiva.estadoCama || "Libre"} onChange={(e) => setEstadoSeleccionado(e.target.value)} className="w-full p-2 border rounded-lg">
+                                        <option value="Ocupada por Vascular">Ocupada por Vascular</option>
+                                        <option value="Invasión Ejercida por Vascular">Invasión Ejercida por Vascular</option>
+                                        <option value="Invadida por otro servicio">Invadida por otro servicio</option>
+                                        <option value="Libre">Libre</option>
+                                        <option value="Desocupada">Desocupada</option>
+                                        <option value="Inhabilitada">Inhabilitada</option>
+                                    </select>
+                                </div>
+
+                                {/* Motivo de Inhabilitación condicional */}
+                                {(estadoSeleccionado === "Inhabilitada" || camaActiva.estadoCama === "Inhabilitada") && (
+                                    <div className="md:col-span-2 bg-orange-50 p-3 rounded-lg border border-orange-200">
+                                        <label className="block text-sm font-bold mb-1 text-orange-900">Motivo de Inhabilitación</label>
+                                        <select name="motivoInhabilitacion" defaultValue={camaActiva.motivoInhabilitacion || motivosInhabilitacion[0]} className="w-full p-2 border rounded-lg bg-white">
+                                            {motivosInhabilitacion.map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* Servicio Involucrado condicional (solo si está invadida) */}
+                                {(estadoSeleccionado === "Invadida por otro servicio" || camaActiva.estadoCama === "Invadida por otro servicio") && (
+                                    <div className="md:col-span-2 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+                                        <label className="block text-sm font-bold mb-1 text-emerald-900">Servicio que Invade</label>
+                                        <select name="servicioInvasor" defaultValue={camaActiva.servicioInvasor || serviciosBase[0]} onChange={(e) => setNuevoServicio(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
+                                            {serviciosBase.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">Nombre del Paciente</label>
+                                    <input name="paciente" defaultValue={camaActiva.paciente} className="w-full p-2 border rounded-lg" placeholder="Nombre completo" />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">Cédula / Expediente Paciente</label>
+                                    <input name="idPaciente" defaultValue={camaActiva.idPaciente} className="w-full p-2 border rounded-lg" placeholder="Número de cédula o expediente" />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">Fecha de Ingreso a Salón</label>
+                                    <input type="date" name="fechaIngresoSalon" defaultValue={camaActiva.fechaIngresoSalon || ""} className="w-full p-2 border rounded-lg" />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">Fecha Primera Cirugía</label>
+                                    <input type="date" name="fechaPrimeraCirugia" defaultValue={camaActiva.fechaPrimeraCirugia || ""} className="w-full p-2 border rounded-lg" />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">Modalidad de Ingreso</label>
+                                    <select name="modalidadIngreso" defaultValue={camaActiva.modalidadIngreso || "Emergencias"} className="w-full p-2 border rounded-lg">
                                         <option value="Emergencias">Emergencias</option>
                                         <option value="Consulta Externa">Consulta Externa</option>
-                                        <option value="Traslado otro hospital">Traslado de otro hospital</option>
                                     </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">Días Pre-Operatorios</label>
-                                    <input name="diasPreOp" type="number" min="0" defaultValue={camaActiva.diasPreOp || 0} required className="w-full p-2 border rounded" />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">Días Post-Operatorios</label>
-                                    <input name="diasPostOp" type="number" min="0" defaultValue={camaActiva.diasPostOp || 0} required className="w-full p-2 border rounded" />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-bold mb-1">Lista de Espera</label>
-                                    <select name="listaEspera" defaultValue={camaActiva.listaEspera || "No"} className="w-full p-2 border rounded">
-                                        <option value="Sí">Sí, pendiente</option>
-                                        <option value="No">No aplica</option>
+                                    <select name="listaEspera" defaultValue={camaActiva.listaEspera || "No"} className="w-full p-2 border rounded-lg">
+                                        <option value="Sí">Sí</option>
+                                        <option value="No">No</option>
                                     </select>
                                 </div>
 
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-bold mb-1">Diagnóstico Principal</label>
-                                    <input name="diagnostico" defaultValue={camaActiva.diagnostico} required className="w-full p-2 border rounded" placeholder="Ej. Pie diabético Wagner 3" />
+                                    <select name="diagnostico" defaultValue={camaActiva.diagnostico || diagnosticosBase[0]} className="w-full p-2 border rounded-lg mb-2">
+                                        {diagnosticosBase.map(d => <option key={d} value={d}>{d}</option>)}
+                                    </select>
+                                    <input name="diagnosticoPersonalizado" placeholder="O especifique diagnóstico si seleccionó 'Otro'..." className="w-full p-2 border rounded-lg" />
                                 </div>
 
                                 <div className="md:col-span-2 flex justify-end gap-2 mt-4">
-                                    <button type="button" onClick={() => setCamaActiva(null)} className="bg-gray-300 px-4 py-2 rounded font-bold hover:bg-gray-400">Cancelar</button>
-                                    <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700">Guardar Cama</button>
+                                    <button type="button" onClick={() => setCamaActiva(null)} className="bg-gray-300 px-4 py-2 rounded-lg font-bold hover:bg-gray-400">Cancelar</button>
+                                    <button type="submit" className="bg-blue-700 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-800">Guardar Cama</button>
                                 </div>
                             </form>
                         </div>
@@ -185,55 +384,74 @@
                 );
             }
 
-            // Vista Principal (Listado)
             return (
-                <div className="p-4 max-w-6xl mx-auto">
-                    <div className="flex justify-between items-center mb-6 bg-white p-4 rounded shadow">
+                <div className="p-4 max-w-7xl mx-auto">
+                    <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow">
                         <div>
                             <h1 className="text-xl font-bold text-blue-900">Censo Activo - Cirugía Vascular</h1>
-                            <span className="text-sm font-semibold text-gray-700">Usuario en turno: {usuario}</span>
+                            <span className="text-sm font-semibold text-gray-600">Usuario en turno: {usuario}</span>
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={() => setCamaActiva({})} className="bg-green-600 text-white px-4 py-2 rounded font-bold text-sm hover:bg-green-700">
-                                + Agregar Cama
+                            <button onClick={() => setCamaActiva({})} className="bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-emerald-800 transition">
+                                + Invasión Ejercida
                             </button>
-                            <button onClick={() => { setUsuario(null); setPinInput(""); }} className="bg-red-500 text-white px-4 py-2 rounded font-bold text-sm hover:bg-red-600">
+                            <button onClick={() => { setUsuario(null); setPinInput(""); }} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-red-700 transition">
                                 Cerrar Sesión
                             </button>
                         </div>
                     </div>
 
                     {camas.length === 0 ? (
-                        <div className="text-center p-8 bg-white rounded shadow text-gray-500">No hay camas registradas en el censo. Haga clic en "+ Agregar Cama".</div>
+                        <div className="text-center p-8 bg-white rounded-xl shadow text-gray-500">Cargando censo hospitalario...</div>
                     ) : (
-                        <div className="grid gap-4">
-                            {camas.map(cama => (
-                                <div key={cama.id} className={`bg-white p-4 rounded shadow border-l-4 ${cama.estadoInvasion === 'Propia de Vascular' ? 'border-blue-500' : 'border-orange-500'}`}>
-                                    <div className="flex justify-between items-start">
-                                        <h3 className="font-bold text-lg">{cama.numeroCama}</h3>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => setCamaActiva(cama)} className="bg-blue-100 text-blue-700 px-3 py-1 rounded text-sm font-semibold hover:bg-blue-200">Editar</button>
-                                            <button onClick={() => eliminarCama(cama.id)} className="bg-red-100 text-red-700 px-3 py-1 rounded text-sm font-semibold hover:bg-red-200">Liberar</button>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {camas.map(cama => {
+                                const esInvadidaOtro = cama.estadoCama === "Invadida por otro servicio";
+                                const colorClase = obtenerColorEstado(cama.estadoCama);
+
+                                return (
+                                    <div key={cama.id} className={`p-4 rounded-xl shadow border-l-8 ${colorClase} flex flex-col justify-between`}>
+                                        <div>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white/60">{cama.salon}</span>
+                                                    <h3 className="text-lg font-extrabold mt-1">Cama {cama.numeroCama} <span className="text-xs font-normal">({cama.tipoCama})</span></h3>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => setCamaActiva(cama)} className="bg-white/80 hover:bg-white text-gray-800 px-2 py-1 rounded text-xs font-bold shadow-sm">Editar</button>
+                                                    <button onClick={() => eliminarCama(cama.id, cama.tipoCama)} className="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs font-bold">X</button>
+                                                </div>
+                                            </div>
+
+                                            {/* REGLA DE VISUALIZACIÓN: Si está invadida por otro servicio, mostrar solo lo esencial */}
+                                            {esInvadidaOtro ? (
+                                                <div className="bg-white/70 p-3 rounded-lg mt-3 text-sm space-y-1">
+                                                    <div className="font-bold text-emerald-900">Estado: Invadida por otro servicio</div>
+                                                    <div><strong>Servicio Invasor:</strong> <span className="text-red-700 font-bold">{cama.servicioInvasor || "No especificado"}</span></div>
+                                                    <div><strong>Fecha Ingreso Salón:</strong> {cama.fechaIngresoSalon || "N/A"}</div>
+                                                </div>
+                                            ) : (
+                                                <div className="bg-white/70 p-3 rounded-lg mt-3 text-sm space-y-1">
+                                                    <div><strong>Paciente:</strong> {cama.paciente || <span className="text-gray-400 italic">Sin asignar</span>}</div>
+                                                    <div><strong>Cédula/Exp:</strong> {cama.idPaciente || "N/A"}</div>
+                                                    <div><strong>Estado:</strong> <span className="font-semibold">{cama.estadoCama}</span></div>
+                                                    {cama.estadoCama === "Inhabilitada" && (
+                                                        <div className="text-orange-800 text-xs font-bold">Motivo: {cama.motivoInhabilitacion}</div>
+                                                    )}
+                                                    <div><strong>Diagnóstico:</strong> {cama.diagnostico}</div>
+                                                    <div><strong>Ingreso:</strong> {cama.modalidadIngreso} ({cama.fechaIngresoSalon || "S/F"})</div>
+                                                    <div><strong>Días Pre-Op:</strong> {cama.diasPreOp ?? 0} | <strong>Días Post-Op:</strong> {cama.diasPostOp ?? 0}</div>
+                                                    <div><strong>Lista de Espera:</strong> {cama.listaEspera}</div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="mt-3 pt-2 border-t border-black/10 flex justify-between items-center text-[11px] opacity-75">
+                                            <span>Modificado por: {cama.ultimoUsuario}</span>
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
-                                        <div className="col-span-2">
-                                            <strong>Estado Administrativo: </strong> 
-                                            <span className={cama.estadoInvasion !== 'Propia de Vascular' ? 'text-orange-600 font-bold' : ''}>
-                                                {cama.estadoInvasion} {cama.servicioInvolucrado !== 'N/A' && `(${cama.servicioInvolucrado})`}
-                                            </span>
-                                        </div>
-                                        <div><strong>Origen:</strong> {cama.origen}</div>
-                                        <div><strong>Lista Espera:</strong> {cama.listaEspera}</div>
-                                        <div><strong>Días Pre-Op:</strong> {cama.diasPreOp}</div>
-                                        <div><strong>Días Post-Op:</strong> {cama.diasPostOp}</div>
-                                        <div className="col-span-2 md:col-span-4"><strong>Diagnóstico:</strong> {cama.diagnostico}</div>
-                                        <div className="col-span-2 md:col-span-4 text-xs text-gray-400">
-                                            Última modificación por: {cama.ultimoUsuario}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
