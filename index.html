@@ -693,7 +693,6 @@
                                         {medicos.map((m, idx) => (
                                             <div key={idx} className="flex justify-between items-center bg-white p-2 rounded shadow-sm border text-sm">
                                                 <span className="font-semibold text-gray-800">{m}</span>
-                                                {/* Se bloquea la eliminación de Jefaturas */}
                                                 {m !== "Dr. Rojas Vázquez" && m !== "Dr. Cabezas Loría" && (
                                                     <button onClick={() => eliminarMedico(m)} className="text-red-600 hover:text-red-800 font-bold px-2 py-1 rounded bg-red-50 hover:bg-red-100 transition text-xs">Eliminar</button>
                                                 )}
@@ -773,7 +772,7 @@
                         </div>
                     )}
 
-                    {/* VISTA: IMPRESIÓN / PDF CENSO DIARIO */}
+                    {/* VISTA: IMPRESIÓN / PDF CENSO DIARIO (LIMPIA PARA CAMAS INVADIDAS) */}
                     {vistaActual === "imprimir" && (
                         <div className="flex-1 max-w-6xl w-full mx-auto p-6 bg-white my-4 rounded-xl shadow">
                             <div className="flex justify-between items-center mb-6 no-print">
@@ -794,7 +793,7 @@
                                     <tr className="bg-gray-200 border-b border-gray-300 text-gray-800">
                                         <th className="border p-2">Cama</th>
                                         <th className="border p-2">Salón</th>
-                                        <th className="border p-2">Paciente</th>
+                                        <th className="border p-2">Paciente / Estado Cama</th>
                                         <th className="border p-2">Cédula / Exp</th>
                                         <th className="border p-2">Estado</th>
                                         <th className="border p-2">Diagnóstico</th>
@@ -805,16 +804,30 @@
                                 <tbody className="divide-y divide-gray-200">
                                     {camasFiltradas.map(c => {
                                         const calc = calcularDias(c.fechaIngresoEmergencias, c.fechaIngresoSalon, c.fechaPrimeraCirugia);
+                                        const esInvadidaServicio = c.estadoCama === "Invadida por otro servicio";
+
                                         return (
                                             <tr key={c.id} className="hover:bg-gray-50">
                                                 <td className="border p-2 font-bold">{c.numeroCama}</td>
                                                 <td className="border p-2">{c.salon}</td>
-                                                <td className="border p-2 font-semibold">{c.paciente || "Sin asignar"}</td>
-                                                <td className="border p-2 font-mono">{c.idPaciente || "N/A"}</td>
-                                                <td className="border p-2">{c.estadoCama}</td>
-                                                <td className="border p-2">{c.diagnostico}</td>
-                                                <td className="border p-2 text-center font-bold">{calc.diasInternamiento}</td>
-                                                <td className="border p-2 text-center">{c.fechaPrimeraCirugia || "Pendiente"}</td>
+                                                
+                                                {/* SI ESTÁ INVADIDA, SOLO MUESTRA EL MENSAJE LIMPIO EN LA COLUMNA DE PACIENTE Y DEJA LO DEMÁS VACÍO */}
+                                                {esInvadidaServicio ? (
+                                                    <React.Fragment>
+                                                        <td className="border p-2 font-bold text-emerald-800 bg-emerald-50" colSpan="6">
+                                                            Invadida por {c.servicioInvasor || "Otro Servicio"}
+                                                        </td>
+                                                    </React.Fragment>
+                                                ) : (
+                                                    <React.Fragment>
+                                                        <td className="border p-2 font-semibold">{c.paciente || "Sin asignar"}</td>
+                                                        <td className="border p-2 font-mono">{c.idPaciente || "N/A"}</td>
+                                                        <td className="border p-2">{c.estadoCama}</td>
+                                                        <td className="border p-2">{c.diagnostico}</td>
+                                                        <td className="border p-2 text-center font-bold">{calc.diasInternamiento}</td>
+                                                        <td className="border p-2 text-center">{c.fechaPrimeraCirugia || "Pendiente"}</td>
+                                                    </React.Fragment>
+                                                )}
                                             </tr>
                                         );
                                     })}
