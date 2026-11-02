@@ -120,7 +120,6 @@
                     const unsubCamas = window.fb.onSnapshot(window.fb.collection(window.db, "camas_vascular"), (snapshot) => {
                         const camasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         if (camasData.length === 0) {
-                            // Creación blindada de camas iniciales usando el número como ID único (Evita duplicados)
                             camasInicialesVascular.forEach(async (cama) => {
                                 await window.fb.setDoc(window.fb.doc(window.db, "camas_vascular", "base_" + cama.numeroCama), {
                                     ...cama,
@@ -139,7 +138,6 @@
                 }
             }, []);
 
-            // Analizador local de fechas para evitar saltos de zona horaria (UTC)
             const parseDateLocal = (dateString) => {
                 if (!dateString) return null;
                 const [y, m, d] = dateString.split('-');
@@ -178,8 +176,7 @@
                 const formData = new FormData(e.target);
                 const datos = Object.fromEntries(formData.entries());
                 
-                // Si la cama es "Invadida por otro servicio", forzamos a vaciar los datos clínicos del formulario
-                if (datos.estadoCama === "Invadida por otro servicio") {
+                if (datos.estadoCama === "Invadida por otro servicio" || datos.estadoCama === "Libre" || datos.estadoCama === "Desocupada" || datos.estadoCama === "Inhabilitada") {
                     datos.paciente = "";
                     datos.idPaciente = "";
                     datos.diagnostico = "";
@@ -448,6 +445,7 @@
                                     const colorClase = obtenerColorEstado(cama.estadoCama);
                                     const calc = calcularDias(cama.fechaIngresoEmergencias, cama.fechaIngresoSalon, cama.fechaPrimeraCirugia);
                                     const esAorta = cama.numeroCama === "611" || cama.numeroCama === "566" || cama.tipoCama === "Propia Aorta";
+                                    const noTienePaciente = cama.estadoCama === "Invadida por otro servicio" || cama.estadoCama === "Libre" || cama.estadoCama === "Desocupada" || cama.estadoCama === "Inhabilitada";
 
                                     return (
                                         <div 
@@ -456,25 +454,53 @@
                                             className={`p-4 rounded-xl border-l-8 shadow-sm cursor-pointer transition transform active:scale-95 ${colorClase} hover:shadow-md`}
                                         >
                                             <div className="flex justify-between items-start">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h4 className="font-bold text-gray-900 text-lg">{cama.paciente || <span className="text-gray-400 italic font-normal">Sin asignar</span>}</h4>
+                                                {noTienePaciente ? (
+                                                    // RENDERIZADO LIMPIO PARA CAMAS SIN PACIENTE DE VASCULAR
+                                                    <div className="w-full flex justify-between items-center py-1">
+                                                        <div>
+                                                            <h4 className="font-bold text-gray-900 text-lg tracking-wide">
+                                                                {cama.estadoCama === "Invadida por otro servicio" 
+                                                                    ? `Invadida por ${cama.servicioInvasor || "Otro Servicio"}` 
+                                                                    : cama.estadoCama}
+                                                            </h4>
+                                                            <div className="text-sm font-semibold text-gray-700 mt-1 flex gap-3">
+                                                                <span>Cama: <strong className="text-base font-extrabold">{cama.numeroCama}</strong></span>
+                                                                <span>• {cama.salon}</span>
+                                                            </div>
+                                                            {cama.estadoCama === "Inhabilitada" && (
+                                                                <div className="text-xs text-orange-800 font-bold mt-1">Motivo: {cama.motivoInhabilitacion}</div>
+                                                            )}
+                                                        </div>
                                                         {esAorta && (
                                                             <span className="bg-purple-700 text-white text-[10px] font-extrabold px-2 py-0.5 rounded tracking-wider uppercase shadow-sm">
                                                                 CAMA AORTA
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="text-sm font-semibold text-gray-700 mt-1 flex gap-3">
-                                                        <span>Cama: <strong className="text-base font-extrabold">{cama.numeroCama}</strong></span>
-                                                        <span>• {cama.salon}</span>
-                                                        <span className="text-xs text-gray-500 font-mono self-center">({cama.idPaciente || "Sin cédula"})</span>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className="text-xs font-bold text-blue-900 block">Días internamiento:</span>
-                                                    <span className="text-xl font-extrabold text-blue-700">{calc.diasInternamiento}</span>
-                                                </div>
+                                                ) : (
+                                                    // RENDERIZADO NORMAL PARA PACIENTES (Ocupada o Invasión Ejercida)
+                                                    <React.Fragment>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <h4 className="font-bold text-gray-900 text-lg">{cama.paciente || <span className="text-gray-400 italic font-normal">Sin asignar</span>}</h4>
+                                                                {esAorta && (
+                                                                    <span className="bg-purple-700 text-white text-[10px] font-extrabold px-2 py-0.5 rounded tracking-wider uppercase shadow-sm">
+                                                                        CAMA AORTA
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-sm font-semibold text-gray-700 mt-1 flex gap-3">
+                                                                <span>Cama: <strong className="text-base font-extrabold">{cama.numeroCama}</strong></span>
+                                                                <span>• {cama.salon}</span>
+                                                                <span className="text-xs text-gray-500 font-mono self-center">({cama.idPaciente || "Sin cédula"})</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <span className="text-xs font-bold text-blue-900 block">Días internamiento:</span>
+                                                            <span className="text-xl font-extrabold text-blue-700">{calc.diasInternamiento}</span>
+                                                        </div>
+                                                    </React.Fragment>
+                                                )}
                                             </div>
                                         </div>
                                     );
@@ -540,7 +566,7 @@
                                             </div>
                                         )}
 
-                                        {!esInvadida && (
+                                        {!esInvadida && estadoSeleccionado !== "Libre" && estadoSeleccionado !== "Desocupada" && estadoSeleccionado !== "Inhabilitada" && (
                                             <React.Fragment>
                                                 <div className="md:col-span-2">
                                                     <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nombre de Paciente</label>
