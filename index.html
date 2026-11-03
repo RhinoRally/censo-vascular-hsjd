@@ -21,7 +21,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+        // Importamos getDoc adicionalmente para leer históricos
+        import { getFirestore, collection, addDoc, doc, setDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyD6cmfArqhgLdW0dn_NAIT9CUMBcT5rW1U",
@@ -34,7 +35,7 @@
 
         const app = initializeApp(firebaseConfig);
         window.db = getFirestore(app);
-        window.fb = { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp };
+        window.fb = { collection, addDoc, doc, setDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp };
     </script>
 
     <script type="text/babel">
@@ -42,6 +43,8 @@
 
         function App() {
             const [usuario, setUsuario] = useState(null);
+            const [aceptoLegales, setAceptoLegales] = useState(false);
+            
             const [pinInput, setPinInput] = useState("");
             const [pinActualConfig, setPinActualConfig] = useState("1234");
             const [medicoSeleccionado, setMedicoSeleccionado] = useState("");
@@ -59,6 +62,12 @@
 
             const [fechaInicioRep, setFechaInicioRep] = useState("");
             const [fechaFinRep, setFechaFinRep] = useState("");
+            
+            // VIAJE EN EL TIEMPO: Estados para manejar la visualización de fechas pasadas
+            const fechaHoy = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Costa_Rica'}); // YYYY-MM-DD local
+            const [fechaImpresion, setFechaImpresion] = useState(fechaHoy);
+            const [camasHistoricas, setCamasHistoricas] = useState(null);
+            const [estadoHistorico, setEstadoHistorico] = useState("hoy"); // 'hoy', 'encontrado', 'no_encontrado'
 
             const [medicos, setMedicos] = useState([]);
             const [nuevoMedicoInput, setNuevoMedicoInput] = useState("");
@@ -101,6 +110,33 @@
                 { numeroCama: "566", salon: "Cirugía Hombres", tipoCama: "Propia Aorta", estadoCama: "Libre", paciente: "", idPaciente: "" }
             ];
 
+            // FUNCIÓN DE CIERRE AUTOMÁTICO (Lazy Snapshot)
+            const verificarCierreAutomatico = async (camasActuales) => {
+                const now = new Date();
+                // Si la hora es 11 PM (23) o más, el objetivo es guardar el censo de "Hoy"
+                // Si es antes de las 11 PM (ej. 7 AM), el objetivo es guardar el censo de "Ayer" (por si nadie se conectó a las 11 PM anoche)
+                let targetDate = new Date(now.toLocaleString("en-US", {timeZone: "America/Costa_Rica"}));
+                if (targetDate.getHours() < 23) {
+                    targetDate.setDate(targetDate.getDate() - 1);
+                }
+                const dateStr = targetDate.toLocaleDateString('en-CA'); // Formato YYYY-MM-DD
+
+                try {
+                    const docRef = window.fb.doc(window.db, "censos_historicos", dateStr);
+                    const snap = await window.fb.getDoc(docRef);
+                    if (!snap.exists()) {
+                        await window.fb.setDoc(docRef, {
+                            fecha: dateStr,
+                            tomadoPor: "Cierre Automático",
+                            camas: camasActuales
+                        });
+                        console.log("Censo cerrado automáticamente para:", dateStr);
+                    }
+                } catch (e) {
+                    console.error("Error en cierre automático", e);
+                }
+            };
+
             useEffect(() => {
                 if (window.fb) {
                     const unsubConfig = window.fb.onSnapshot(window.fb.doc(window.db, "config", "seguridad"), (docSnap) => {
@@ -115,14 +151,7 @@
                         if (docSnap.exists() && docSnap.data().lista) {
                             setMedicos(docSnap.data().lista.sort());
                         } else {
-                            const iniciales = [
-                                "Dr. Cabezas Loría", "Dr. Castillo Amoretti", "Dr. Cruz Guzmán", 
-                                "Dr. Giraldo Noguera", "Dra. Herrera Garrido", "Dra. Leitón Solano", 
-                                "Dra. Méndez Marín", "Dr. Meza Aguilar", "Dra. Min Kim", 
-                                "Dr. Moreno Arroyo", "Dr. Rojas Vázquez", "Dra. Rodríguez Rojas", 
-                                "Dra. Sandí Ovares", "Dr. Sandoval Alfaro", "Dra. Secades Mesén", 
-                                "Dra. Zúñiga Villegas"
-                            ].sort();
+                            const iniciales = ["Dr. Cabezas Loría", "Dr. Castillo Amoretti", "Dr. Cruz Guzmán", "Dr. Giraldo Noguera", "Dra. Herrera Garrido", "Dra. Leitón Solano", "Dra. Méndez Marín", "Dr. Meza Aguilar", "Dra. Min Kim", "Dr. Moreno Arroyo", "Dr. Rojas Vázquez", "Dra. Rodríguez Rojas", "Dra. Sandí Ovares", "Dr. Sandoval Alfaro", "Dra. Secades Mesén", "Dra. Zúñiga Villegas"].sort();
                             window.fb.setDoc(window.fb.doc(window.db, "config", "medicos"), { lista: iniciales });
                         }
                     });
@@ -131,28 +160,66 @@
                         const camasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         if (camasData.length === 0) {
                             camasInicialesVascular.forEach(async (cama) => {
-                                await window.fb.setDoc(window.fb.doc(window.db, "camas_vascular", "base_" + cama.numeroCama), {
-                                    ...cama,
-                                    ultimoUsuario: "Sistema"
-                                });
+                                await window.fb.setDoc(window.fb.doc(window.db, "camas_vascular", "base_" + cama.numeroCama), { ...cama, ultimoUsuario: "Sistema" });
                             });
                         } else {
                             setCamas(camasData);
+                            // Validar cierre automático cada vez que se actualizan las camas
+                            verificarCierreAutomatico(camasData);
                         }
                     });
 
-                    return () => {
-                        unsubConfig();
-                        unsubMedicos();
-                        unsubCamas();
-                    };
+                    return () => { unsubConfig(); unsubMedicos(); unsubCamas(); };
                 }
             }, []);
+
+            // BUSCADOR HISTÓRICO (Disparado por cambio de fecha)
+            useEffect(() => {
+                const buscarHistorico = async () => {
+                    if (fechaImpresion === fechaHoy) {
+                        setEstadoHistorico("hoy");
+                        setCamasHistoricas(null);
+                        return;
+                    }
+                    if (window.fb && window.fb.getDoc) {
+                        try {
+                            const docRef = window.fb.doc(window.db, "censos_historicos", fechaImpresion);
+                            const snap = await window.fb.getDoc(docRef);
+                            if (snap.exists()) {
+                                setCamasHistoricas(snap.data().camas);
+                                setEstadoHistorico("encontrado");
+                            } else {
+                                setCamasHistoricas([]);
+                                setEstadoHistorico("no_encontrado");
+                            }
+                        } catch(e) { console.error(e); }
+                    }
+                };
+                buscarHistorico();
+            }, [fechaImpresion, fechaHoy]);
+
+            const forzarCierreDiarioManual = async () => {
+                if(!confirm(`Esto guardará una copia inmodificable del censo tal y como está en este momento con la fecha de HOY (${fechaHoy}). ¿Desea continuar?`)) return;
+                try {
+                    await window.fb.setDoc(window.fb.doc(window.db, "censos_historicos", fechaHoy), {
+                        fecha: fechaHoy,
+                        tomadoPor: usuario,
+                        camas: camas
+                    });
+                    alert(`¡Censo de hoy guardado exitosamente en el archivo histórico!`);
+                } catch(e) { alert("Error al guardar."); }
+            };
 
             const parseDateLocal = (dateString) => {
                 if (!dateString) return null;
                 const [y, m, d] = dateString.split('-');
                 return new Date(y, m - 1, d);
+            };
+
+            const formatearFechaCR = (dateString) => {
+                const date = parseDateLocal(dateString);
+                if (!date) return "";
+                return date.toLocaleDateString('es-CR', { day: '2-digit', month: '2-digit', year: 'numeric' });
             };
 
             const calcularDias = (fechaEmergencias, fechaSalon, fechaCirugia) => {
@@ -171,10 +238,7 @@
                 }
 
                 const cirugia = parseDateLocal(fechaCirugia);
-                
-                if (hoy < cirugia) {
-                    return { diasInternamiento, diasPostOp: 0 };
-                } else if (hoy.getTime() === cirugia.getTime()) {
+                if (hoy < cirugia || hoy.getTime() === cirugia.getTime()) {
                     return { diasInternamiento, diasPostOp: 0 };
                 } else {
                     const diasPost = Math.floor((hoy - cirugia) / (1000 * 60 * 60 * 24));
@@ -188,19 +252,9 @@
                 const datos = Object.fromEntries(formData.entries());
                 
                 if (datos.estadoCama === "Invadida por otro servicio" || datos.estadoCama === "Libre" || datos.estadoCama === "Desocupada" || datos.estadoCama === "Inhabilitada") {
-                    datos.paciente = "";
-                    datos.idPaciente = "";
-                    datos.diagnostico = "";
-                    datos.modalidadIngreso = "";
-                    datos.fechaIngresoEmergencias = "";
-                    datos.fechaIngresoSalon = "";
-                    datos.fechaPrimeraCirugia = "";
-                    datos.listaEspera = "No";
+                    datos.paciente = ""; datos.idPaciente = ""; datos.diagnostico = ""; datos.modalidadIngreso = ""; datos.fechaIngresoEmergencias = ""; datos.fechaIngresoSalon = ""; datos.fechaPrimeraCirugia = ""; datos.listaEspera = "No";
                 }
-
-                if (datos.modalidadIngreso !== "Emergencias") {
-                    datos.fechaIngresoEmergencias = "";
-                }
+                if (datos.modalidadIngreso !== "Emergencias") datos.fechaIngresoEmergencias = "";
 
                 const calculo = calcularDias(datos.fechaIngresoEmergencias, datos.fechaIngresoSalon, datos.fechaPrimeraCirugia);
                 datos.diasPreOp = calculo.diasInternamiento;
@@ -216,38 +270,19 @@
                     }
                     setVistaActual("listado");
                     setCamaSeleccionada(null);
-                } catch (error) {
-                    alert("Error al guardar en la base de datos.");
-                    console.error(error);
-                }
+                } catch (error) { alert("Error al guardar en la base de datos."); }
             };
 
             const cambiarPinSistema = async (e) => {
                 e.preventDefault();
-                if (pinViejoInput !== pinActualConfig) {
-                    alert("El PIN actual es incorrecto.");
-                    return;
-                }
-                if (pinNuevoInput.length !== 4 || isNaN(pinNuevoInput)) {
-                    alert("El nuevo PIN debe ser estrictamente de 4 dígitos numéricos.");
-                    return;
-                }
-                if (pinNuevoInput !== pinConfirmarInput) {
-                    alert("Los nuevos PINs no coinciden.");
-                    return;
-                }
-
+                if (pinViejoInput !== pinActualConfig) { alert("El PIN actual es incorrecto."); return; }
+                if (pinNuevoInput.length !== 4 || isNaN(pinNuevoInput)) { alert("El nuevo PIN debe ser estrictamente de 4 dígitos numéricos."); return; }
+                if (pinNuevoInput !== pinConfirmarInput) { alert("Los nuevos PINs no coinciden."); return; }
                 try {
                     await window.fb.setDoc(window.fb.doc(window.db, "config", "seguridad"), { pin: pinNuevoInput });
                     alert("¡PIN actualizado con éxito en la base de datos!");
-                    setPinViejoInput("");
-                    setPinNuevoInput("");
-                    setPinConfirmarInput("");
-                    setVistaActual("listado");
-                } catch (err) {
-                    alert("Error al actualizar el PIN.");
-                    console.error(err);
-                }
+                    setPinViejoInput(""); setPinNuevoInput(""); setPinConfirmarInput(""); setVistaActual("listado");
+                } catch (err) { alert("Error al actualizar el PIN."); }
             };
 
             const agregarMedico = async () => {
@@ -256,49 +291,25 @@
                     try {
                         await window.fb.setDoc(window.fb.doc(window.db, "config", "medicos"), { lista: nuevaLista });
                         setNuevoMedicoInput("");
-                    } catch (error) {
-                        alert("Error al guardar el médico. Verifique las reglas de Firebase.");
-                    }
+                    } catch (error) { alert("Error al guardar el médico."); }
                 }
             };
 
             const eliminarMedico = async (medicoGris) => {
                 if(confirm(`¿Está seguro de eliminar a ${medicoGris} del sistema?`)) {
                     const nuevaLista = medicos.filter(item => item !== medicoGris);
-                    try {
-                        await window.fb.setDoc(window.fb.doc(window.db, "config", "medicos"), { lista: nuevaLista });
-                    } catch (error) {
-                        alert("Error al eliminar.");
-                    }
+                    try { await window.fb.setDoc(window.fb.doc(window.db, "config", "medicos"), { lista: nuevaLista }); } 
+                    catch (error) { alert("Error al eliminar."); }
                 }
             };
 
             const agregarCamaExtra = () => {
-                setCamaSeleccionada({
-                    numeroCama: "",
-                    salon: "Cirugía Mujeres",
-                    tipoCama: "Invasión Ejercida",
-                    estadoCama: "Invasión Ejercida por Vascular",
-                    paciente: "",
-                    idPaciente: "",
-                    modalidadIngreso: "Emergencias",
-                    listaEspera: "No",
-                    diagnostico: "Pie Diabético",
-                    fechaIngresoEmergencias: "",
-                    fechaIngresoSalon: new Date().toISOString().split('T')[0],
-                    fechaPrimeraCirugia: "",
-                    ultimoUsuario: usuario
-                });
-                setEstadoSeleccionado("Invasión Ejercida por Vascular");
-                setModalidadIngresoSeleccionada("Emergencias");
-                setVistaActual("edicion");
+                setCamaSeleccionada({ numeroCama: "", salon: "Cirugía Mujeres", tipoCama: "Invasión Ejercida", estadoCama: "Invasión Ejercida por Vascular", paciente: "", idPaciente: "", modalidadIngreso: "Emergencias", listaEspera: "No", diagnostico: "Pie Diabético", fechaIngresoEmergencias: "", fechaIngresoSalon: new Date().toISOString().split('T')[0], fechaPrimeraCirugia: "", ultimoUsuario: usuario });
+                setEstadoSeleccionado("Invasión Ejercida por Vascular"); setModalidadIngresoSeleccionada("Emergencias"); setVistaActual("edicion");
             };
 
             const abrirEdicion = (cama) => {
-                setCamaSeleccionada(cama);
-                setEstadoSeleccionado(cama.estadoCama);
-                setModalidadIngresoSeleccionada(cama.modalidadIngreso || "Emergencias");
-                setVistaActual("edicion");
+                setCamaSeleccionada(cama); setEstadoSeleccionado(cama.estadoCama); setModalidadIngresoSeleccionada(cama.modalidadIngreso || "Emergencias"); setVistaActual("edicion");
             };
 
             const obtenerColorEstado = (estado) => {
@@ -314,19 +325,14 @@
             };
 
             const ordenarCamasLogica = (a, b) => {
-                const numA = parseInt(a.numeroCama);
-                const numB = parseInt(b.numeroCama);
-                const esIcuA = isNaN(numA) || (a.salon && a.salon.includes("UCI"));
-                const esIcuB = isNaN(numB) || (b.salon && b.salon.includes("UCI"));
-
-                if (esIcuA && !esIcuB) return 1;
-                if (!esIcuA && esIcuB) return -1;
-                if (esIcuA && esIcuB) {
-                    return a.numeroCama.localeCompare(b.numeroCama, undefined, {numeric: true});
-                }
+                const numA = parseInt(a.numeroCama); const numB = parseInt(b.numeroCama);
+                const esIcuA = isNaN(numA) || (a.salon && a.salon.includes("UCI")); const esIcuB = isNaN(numB) || (b.salon && b.salon.includes("UCI"));
+                if (esIcuA && !esIcuB) return 1; if (!esIcuA && esIcuB) return -1;
+                if (esIcuA && esIcuB) return a.numeroCama.localeCompare(b.numeroCama, undefined, {numeric: true});
                 return numA - numB;
             };
 
+            // FLUJO 1: LOGIN PIN
             if (!usuario) {
                 return (
                     <div className="flex items-center justify-center min-h-screen bg-slate-900 p-4">
@@ -339,22 +345,55 @@
                                 <option value="">Seleccione Médico...</option>
                                 {medicos.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
-
                             <input type="password" placeholder="PIN de 4 dígitos" className="w-full p-3 mb-6 border rounded-lg text-center tracking-widest text-lg bg-gray-50" maxLength="4" value={pinInput} onChange={(e) => setPinInput(e.target.value)} />
 
                             <button className="w-full bg-blue-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-800 transition"
                                 onClick={() => {
-                                    if(medicoSeleccionado && pinInput === pinActualConfig) setUsuario(medicoSeleccionado);
-                                    else alert("PIN incorrecto o médico no seleccionado");
+                                    if(medicoSeleccionado && pinInput === pinActualConfig) { setUsuario(medicoSeleccionado); } 
+                                    else { alert("PIN incorrecto o médico no seleccionado"); }
                                 }}>
-                                Ingresar al Censo
+                                Ingresar
                             </button>
                         </div>
                     </div>
                 );
             }
 
-            const camasFiltradas = camas.filter(c => 
+            // FLUJO 2: AVISO LEGAL Y CONFIDENCIALIDAD OBLIGATORIO
+            if (usuario && !aceptoLegales) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-slate-900 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border-t-8 border-t-red-700">
+                            <h2 className="text-xl font-bold text-red-800 mb-4 flex items-center gap-2">⚠️ Aviso de Confidencialidad</h2>
+                            <div className="text-sm text-gray-700 space-y-4 mb-6 text-justify leading-relaxed">
+                                <p>Al ingresar a esta aplicación, usted reconoce y acepta que la información clínica aquí consignada está sujeta a la <strong>confidencialidad médico-paciente</strong>, así como a la legislación nacional y regulaciones de la CCSS en materia de protección de datos en salud.</p>
+                                <p>Esta plataforma se utiliza estrictamente como un <strong>medio de control y gestión interna</strong> de camas del Servicio de Cirugía Vascular, y en ningún momento sustituye ni constituye una extensión del expediente clínico oficial (EDUS).</p>
+                                <p className="font-semibold text-gray-900 border-l-4 border-red-500 pl-3">El uso inadecuado o la difusión de la información contenida en este censo es responsabilidad legal de cada usuario autorizado.</p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button onClick={() => setAceptoLegales(true)} className="w-full bg-blue-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-800 transition shadow">
+                                    Acepto y Comprendo
+                                </button>
+                                <button onClick={() => { setUsuario(null); setPinInput(""); }} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition">
+                                    Cancelar y Salir
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // PREPARACIÓN DE DATOS PARA PDF Y REPORTE
+            // La base de datos usada para buscar y filtrar será la actual o la histórica dependiendo de la selección
+            const baseCamasActivas = estadoHistorico === "encontrado" ? camasHistoricas : camas;
+
+            const camasFiltradasActivas = camas.filter(c => 
+                (c.paciente && c.paciente.toLowerCase().includes(busqueda.toLowerCase())) ||
+                (c.numeroCama && c.numeroCama.toLowerCase().includes(busqueda.toLowerCase())) ||
+                (c.salon && c.salon.toLowerCase().includes(busqueda.toLowerCase()))
+            ).sort(ordenarCamasLogica);
+
+            const camasFiltradasPDF = baseCamasActivas.filter(c => 
                 (c.paciente && c.paciente.toLowerCase().includes(busqueda.toLowerCase())) ||
                 (c.numeroCama && c.numeroCama.toLowerCase().includes(busqueda.toLowerCase())) ||
                 (c.salon && c.salon.toLowerCase().includes(busqueda.toLowerCase()))
@@ -368,37 +407,21 @@
             });
 
             const estadisticasReporte = () => {
-                let diasOcupadaVascular = 0;
-                let diasInvadidas = 0;
-                let diasInvasionEjercida = 0;
-                let arrPre = [];
-                let arrPost = [];
-
+                let diasOcupadaVascular = 0; let diasInvadidas = 0; let diasInvasionEjercida = 0; let arrPre = []; let arrPost = [];
                 camasFiltradasPorFecha.forEach(c => {
                     const calc = calcularDias(c.fechaIngresoEmergencias, c.fechaIngresoSalon, c.fechaPrimeraCirugia);
                     if (c.estadoCama === "Ocupada por Vascular") diasOcupadaVascular += calc.diasInternamiento;
                     if (c.estadoCama === "Invadida por otro servicio") diasInvadidas += calc.diasInternamiento;
                     if (c.estadoCama === "Invasión Ejercida por Vascular") diasInvasionEjercida += calc.diasInternamiento;
-
                     arrPre.push(calc.diasInternamiento);
                     if (typeof calc.diasPostOp === 'number' && calc.diasPostOp > 0) arrPost.push(calc.diasPostOp);
                 });
-
                 const minMaxAvg = (arr) => {
                     if (arr.length === 0) return { min: 0, max: 0, avg: 0 };
-                    const min = Math.min(...arr);
-                    const max = Math.max(...arr);
-                    const sum = arr.reduce((a, b) => a + b, 0);
+                    const min = Math.min(...arr); const max = Math.max(...arr); const sum = arr.reduce((a, b) => a + b, 0);
                     return { min, max, avg: (sum / arr.length).toFixed(1) };
                 };
-
-                return {
-                    diasOcupadaVascular,
-                    diasInvadidas,
-                    diasInvasionEjercida,
-                    pre: minMaxAvg(arrPre),
-                    post: minMaxAvg(arrPost)
-                };
+                return { diasOcupadaVascular, diasInvadidas, diasInvasionEjercida, pre: minMaxAvg(arrPre), post: minMaxAvg(arrPost) };
             };
 
             const stats = estadisticasReporte();
@@ -412,7 +435,7 @@
                             <h1 className="text-lg font-bold tracking-wide">Censo_Camas_Vascular</h1>
                             <div className="flex items-center gap-3">
                                 <span className="text-xs bg-white/15 px-2.5 py-1 rounded font-medium">Dr(a). {usuario}</span>
-                                <button onClick={() => { setUsuario(null); setPinInput(""); setVistaActual("listado"); }} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs font-bold transition shadow-sm">
+                                <button onClick={() => { setUsuario(null); setPinInput(""); setAceptoLegales(false); setVistaActual("listado"); }} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs font-bold transition shadow-sm">
                                     Salir
                                 </button>
                             </div>
@@ -439,7 +462,7 @@
                         </div>
                     </header>
 
-                    {/* VISTA: LISTADO DE CAMAS */}
+                    {/* VISTA: LISTADO DE CAMAS (SIEMPRE MUESTRA EL ACTIVO) */}
                     {vistaActual === "listado" && (
                         <div className="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col">
                             <div className="mb-4 flex gap-3">
@@ -456,11 +479,11 @@
                             </div>
 
                             <div className="space-y-3">
-                                {camasFiltradas.map(cama => {
+                                {camasFiltradasActivas.map(cama => {
                                     const colorClase = obtenerColorEstado(cama.estadoCama);
                                     const calc = calcularDias(cama.fechaIngresoEmergencias, cama.fechaIngresoSalon, cama.fechaPrimeraCirugia);
                                     const esAorta = cama.numeroCama === "611" || cama.numeroCama === "566" || cama.tipoCama === "Propia Aorta";
-                                    const noTienePaciente = cama.estadoCama === "Invadida por otro servicio" || cama.estadoCama === "Libre" || cama.estadoCama === "Desocupada" || cama.estadoCama === "Inhabilitada";
+                                    const noTienePaciente = ["Invadida por otro servicio", "Libre", "Desocupada", "Inhabilitada"].includes(cama.estadoCama);
 
                                     return (
                                         <div 
@@ -528,7 +551,7 @@
                             <div className="bg-white rounded-xl shadow-lg border p-6 my-4">
                                 <div className="flex justify-between items-center border-b pb-4 mb-6">
                                     <button onClick={() => setVistaActual("listado")} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-4 py-2 rounded-lg text-sm transition">
-                                        ← Volver al listado de camas
+                                        ← Volver al listado
                                     </button>
                                     <h2 className="text-xl font-bold text-blue-900">
                                         {camaSeleccionada.id && !camaSeleccionada.id.startsWith("base_") ? `Editar Cama ${camaSeleccionada.numeroCama}` : "Registrar Cama Extra"}
@@ -634,14 +657,11 @@
                                                     <div className="md:col-span-2">
                                                         <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Fecha Primera Cirugía</label>
                                                         <input type="date" name="fechaPrimeraCirugia" defaultValue={camaSeleccionada.fechaPrimeraCirugia || ""} className="w-full p-2.5 border rounded-lg text-sm bg-gray-50" />
-                                                        <p className="text-[10px] text-gray-400 mt-1">Si selecciona una fecha por error, puede borrarla dejando el espacio en blanco.</p>
                                                     </div>
                                                 </div>
 
                                                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border md:col-span-2">
-                                                    <div>
-                                                        <span className="text-xs font-bold text-gray-700 uppercase block">Lista de Espera</span>
-                                                    </div>
+                                                    <div><span className="text-xs font-bold text-gray-700 uppercase block">Lista de Espera</span></div>
                                                     <select name="listaEspera" defaultValue={camaSeleccionada.listaEspera || "No"} className="p-2 border rounded text-sm font-bold bg-white">
                                                         <option value="No">No</option>
                                                         <option value="Sí">Sí</option>
@@ -654,7 +674,7 @@
                                     <div className="flex justify-end gap-3 pt-4 border-t mt-4">
                                         {camaSeleccionada.id && (
                                             <button type="button" onClick={async () => {
-                                                if(confirm("¿Está seguro de ELIMINAR esta cama del sistema? (Si es una cama propia triplicada por error, bórrela para limpiar su censo)")) {
+                                                if(confirm("¿Está seguro de ELIMINAR esta cama del sistema?")) {
                                                     await window.fb.deleteDoc(window.fb.doc(window.db, "camas_vascular", camaSeleccionada.id));
                                                     setVistaActual("listado");
                                                 }
@@ -662,48 +682,51 @@
                                                 Eliminar Cama
                                             </button>
                                         )}
-                                        <button type="button" onClick={() => setVistaActual("listado")} className="bg-gray-200 hover:bg-gray-300 px-5 py-2.5 rounded-lg font-bold text-sm">
-                                            Cancelar
-                                        </button>
-                                        <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-sm shadow">
-                                            Guardar Cambios
-                                        </button>
+                                        <button type="button" onClick={() => setVistaActual("listado")} className="bg-gray-200 hover:bg-gray-300 px-5 py-2.5 rounded-lg font-bold text-sm">Cancelar</button>
+                                        <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-sm shadow">Guardar</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* VISTA: GESTIÓN JEFATURA (Solo Jefatura) */}
+                    {/* VISTA: GESTIÓN JEFATURA */}
                     {vistaActual === "jefatura" && (usuario === "Dr. Rojas Vázquez" || usuario === "Dr. Cabezas Loría") && (
                         <div className="flex-1 max-w-md w-full mx-auto p-4 flex items-center justify-center">
                             <div className="bg-white rounded-xl shadow-lg border p-6 w-full border-t-4 border-t-amber-500">
                                 <h2 className="text-xl font-bold text-amber-700 mb-2 text-center">Panel de Jefatura</h2>
-                                <p className="text-xs text-gray-500 mb-6 text-center">Gestión de médicos autorizados en el sistema. Los cambios se reflejarán instantáneamente en todos los dispositivos.</p>
-
-                                <div className="mb-4">
+                                
+                                <div className="mb-6 pb-6 border-b">
                                     <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Agregar Nuevo Médico</label>
-                                    <div className="flex gap-2 mb-6">
+                                    <div className="flex gap-2 mb-4">
                                         <input type="text" placeholder="Ej. Dra. Nueva Doctora" value={nuevoMedicoInput} onChange={(e) => setNuevoMedicoInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-gray-50" />
-                                        <button onClick={agregarMedico} className="bg-amber-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-amber-700 transition">+</button>
+                                        <button onClick={agregarMedico} className="bg-amber-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-amber-700">+</button>
                                     </div>
 
                                     <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Médicos Actuales</label>
-                                    <div className="max-h-64 overflow-y-auto space-y-2 border rounded-lg p-2 bg-gray-50">
+                                    <div className="max-h-48 overflow-y-auto space-y-2 border rounded-lg p-2 bg-gray-50">
                                         {medicos.map((m, idx) => (
                                             <div key={idx} className="flex justify-between items-center bg-white p-2 rounded shadow-sm border text-sm">
                                                 <span className="font-semibold text-gray-800">{m}</span>
                                                 {m !== "Dr. Rojas Vázquez" && m !== "Dr. Cabezas Loría" && (
-                                                    <button onClick={() => eliminarMedico(m)} className="text-red-600 hover:text-red-800 font-bold px-2 py-1 rounded bg-red-50 hover:bg-red-100 transition text-xs">Eliminar</button>
+                                                    <button onClick={() => eliminarMedico(m)} className="text-red-600 hover:text-red-800 font-bold px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-xs">Eliminar</button>
                                                 )}
                                             </div>
                                         ))}
                                     </div>
                                 </div>
+
+                                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                    <h3 className="text-sm font-bold text-blue-900 mb-2">Respaldo Manual del Censo</h3>
+                                    <p className="text-xs text-gray-600 mb-3 text-justify">El sistema toma una "foto" diaria de las camas automáticamente en las noches. Si lo necesita, puede forzar que se guarde la versión de hoy ahora mismo.</p>
+                                    <button onClick={forzarCierreDiarioManual} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 px-4 rounded shadow text-xs">
+                                        📸 Forzar Guardado Histórico Hoy
+                                    </button>
+                                </div>
                                 
-                                <div className="mt-6 pt-4 border-t text-center">
-                                    <button onClick={() => setVistaActual("listado")} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-6 py-2 rounded-lg text-sm transition">
-                                        Volver al Censo
+                                <div className="mt-4 text-center">
+                                    <button onClick={() => setVistaActual("listado")} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-6 py-2 rounded-lg text-sm">
+                                        Volver
                                     </button>
                                 </div>
                             </div>
@@ -772,67 +795,103 @@
                         </div>
                     )}
 
-                    {/* VISTA: IMPRESIÓN / PDF CENSO DIARIO (LIMPIA PARA CAMAS INVADIDAS) */}
+                    {/* VISTA: IMPRESIÓN / PDF CENSO DIARIO (CON MÁQUINA DEL TIEMPO) */}
                     {vistaActual === "imprimir" && (
                         <div className="flex-1 max-w-6xl w-full mx-auto p-6 bg-white my-4 rounded-xl shadow">
-                            <div className="flex justify-between items-center mb-6 no-print">
-                                <h2 className="text-xl font-bold text-blue-900">Vista Previa para Impresión (Censo Diario)</h2>
-                                <button onClick={() => window.print()} className="bg-blue-700 text-white font-bold px-5 py-2 rounded-lg text-sm shadow hover:bg-blue-800">
-                                    Imprimir / Guardar PDF
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-4 no-print gap-4">
+                                <div className="flex items-center gap-3 bg-blue-50 p-2 rounded-lg border border-blue-200">
+                                    <label className="text-sm font-bold text-blue-900 whitespace-nowrap">📅 Viaje en el tiempo (Fecha):</label>
+                                    <input 
+                                        type="date" 
+                                        value={fechaImpresion} 
+                                        max={fechaHoy}
+                                        onChange={(e) => setFechaImpresion(e.target.value)} 
+                                        className="p-1.5 border border-blue-300 rounded text-sm font-semibold bg-white text-blue-900 cursor-pointer hover:bg-blue-100"
+                                        title="Seleccione una fecha para ver el histórico de camas"
+                                    />
+                                </div>
+                                <button onClick={() => window.print()} className="bg-blue-700 text-white font-bold px-6 py-2.5 rounded-lg text-sm shadow hover:bg-blue-800 transition">
+                                    🖨️ Imprimir / Guardar PDF
                                 </button>
                             </div>
 
-                            <div className="text-center mb-6">
-                                <h3 className="text-lg font-bold text-gray-900">HOSPITAL SAN JUAN DE DIOS</h3>
-                                <h4 className="text-md font-semibold text-gray-700">SERVICIO DE CIRUGÍA VASCULAR - CENSO DIARIO DE CAMAS</h4>
-                                <p className="text-xs text-gray-500 mt-1">Fecha de emisión: {new Date().toLocaleDateString()}</p>
-                            </div>
+                            {/* BANNERS DE ESTADO DEL VIAJE EN EL TIEMPO */}
+                            {estadoHistorico === "no_encontrado" && (
+                                <div className="mb-6 p-4 bg-orange-100 border-l-4 border-orange-500 text-orange-800 font-bold rounded shadow-sm no-print">
+                                    ⚠️ No se encontró ninguna "foto" guardada del censo para la fecha {formatearFechaCR(fechaImpresion)}.
+                                </div>
+                            )}
+                            
+                            {estadoHistorico === "encontrado" && (
+                                <div className="mb-6 p-3 bg-indigo-100 border-l-4 border-indigo-600 text-indigo-900 text-sm font-bold rounded shadow-sm no-print flex items-center gap-2">
+                                    🕰️ Viendo el archivo histórico del {formatearFechaCR(fechaImpresion)}. (Los datos en esta vista no se pueden editar).
+                                </div>
+                            )}
 
-                            <table className="w-full text-left border-collapse border border-gray-300 text-xs">
-                                <thead>
-                                    <tr className="bg-gray-200 border-b border-gray-300 text-gray-800">
-                                        <th className="border p-2">Cama</th>
-                                        <th className="border p-2">Salón</th>
-                                        <th className="border p-2">Paciente / Estado Cama</th>
-                                        <th className="border p-2">Cédula / Exp</th>
-                                        <th className="border p-2">Estado</th>
-                                        <th className="border p-2">Diagnóstico</th>
-                                        <th className="border p-2">Días Int.</th>
-                                        <th className="border p-2">1ra Cirugía</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {camasFiltradas.map(c => {
-                                        const calc = calcularDias(c.fechaIngresoEmergencias, c.fechaIngresoSalon, c.fechaPrimeraCirugia);
-                                        const esInvadidaServicio = c.estadoCama === "Invadida por otro servicio";
+                            {(estadoHistorico === "hoy" || estadoHistorico === "encontrado") && (
+                                <React.Fragment>
+                                    <div className="text-center mb-6">
+                                        <h3 className="text-lg font-bold text-gray-900">HOSPITAL SAN JUAN DE DIOS</h3>
+                                        <h4 className="text-md font-semibold text-gray-700">SERVICIO DE CIRUGÍA VASCULAR - CENSO DIARIO DE CAMAS</h4>
+                                        <p className="text-sm text-gray-800 font-semibold mt-1">
+                                            Fecha del censo: {formatearFechaCR(fechaImpresion) || new Date().toLocaleDateString('es-CR')}
+                                            {estadoHistorico === "encontrado" && " (HISTÓRICO ARCHIVADO)"}
+                                        </p>
+                                    </div>
 
-                                        return (
-                                            <tr key={c.id} className="hover:bg-gray-50">
-                                                <td className="border p-2 font-bold">{c.numeroCama}</td>
-                                                <td className="border p-2">{c.salon}</td>
-                                                
-                                                {/* SI ESTÁ INVADIDA, SOLO MUESTRA EL MENSAJE LIMPIO EN LA COLUMNA DE PACIENTE Y DEJA LO DEMÁS VACÍO */}
-                                                {esInvadidaServicio ? (
-                                                    <React.Fragment>
-                                                        <td className="border p-2 font-bold text-emerald-800 bg-emerald-50" colSpan="6">
-                                                            Invadida por {c.servicioInvasor || "Otro Servicio"}
-                                                        </td>
-                                                    </React.Fragment>
-                                                ) : (
-                                                    <React.Fragment>
-                                                        <td className="border p-2 font-semibold">{c.paciente || "Sin asignar"}</td>
-                                                        <td className="border p-2 font-mono">{c.idPaciente || "N/A"}</td>
-                                                        <td className="border p-2">{c.estadoCama}</td>
-                                                        <td className="border p-2">{c.diagnostico}</td>
-                                                        <td className="border p-2 text-center font-bold">{calc.diasInternamiento}</td>
-                                                        <td className="border p-2 text-center">{c.fechaPrimeraCirugia || "Pendiente"}</td>
-                                                    </React.Fragment>
-                                                )}
+                                    <table className="w-full text-left border-collapse border border-gray-300 text-[11px] md:text-xs">
+                                        <thead>
+                                            <tr className="bg-gray-200 border-b border-gray-300 text-gray-800">
+                                                <th className="border p-1.5 md:p-2 w-10 md:w-12 text-center">Cama</th>
+                                                <th className="border p-1.5 md:p-2">Salón</th>
+                                                <th className="border p-1.5 md:p-2 w-48">Paciente / Estado Cama</th>
+                                                <th className="border p-1.5 md:p-2">Cédula / Exp</th>
+                                                <th className="border p-1.5 md:p-2">Estado</th>
+                                                <th className="border p-1.5 md:p-2">Diagnóstico</th>
+                                                <th className="border p-1.5 md:p-2 text-center w-12">Días Int.</th>
+                                                <th className="border p-1.5 md:p-2 text-center">1ra Cirugía</th>
                                             </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                            {camasFiltradasPDF.map(c => {
+                                                const calc = calcularDias(c.fechaIngresoEmergencias, c.fechaIngresoSalon, c.fechaPrimeraCirugia);
+                                                const noTienePaciente = ["Invadida por otro servicio", "Libre", "Desocupada", "Inhabilitada"].includes(c.estadoCama);
+                                                const esInvadidaServicio = c.estadoCama === "Invadida por otro servicio";
+
+                                                return (
+                                                    <tr key={c.id || Math.random()} className="hover:bg-gray-50">
+                                                        <td className="border p-1.5 md:p-2 font-bold text-center">{c.numeroCama}</td>
+                                                        <td className="border p-1.5 md:p-2">{c.salon}</td>
+                                                        
+                                                        {/* IMPRESIÓN LIMPIA CON CELDAS VACÍAS PARA EVITAR ERRORES DE PDF */}
+                                                        {noTienePaciente ? (
+                                                            <React.Fragment>
+                                                                <td className="border p-1.5 md:p-2 font-bold text-gray-600">
+                                                                    {esInvadidaServicio ? `Invadida por ${c.servicioInvasor || "Otro Servicio"}` : c.estadoCama}
+                                                                </td>
+                                                                <td className="border p-1.5 md:p-2 text-center text-gray-300">-</td>
+                                                                <td className="border p-1.5 md:p-2 text-center text-gray-300">-</td>
+                                                                <td className="border p-1.5 md:p-2 text-center text-gray-300">-</td>
+                                                                <td className="border p-1.5 md:p-2 text-center text-gray-300">-</td>
+                                                                <td className="border p-1.5 md:p-2 text-center text-gray-300">-</td>
+                                                            </React.Fragment>
+                                                        ) : (
+                                                            <React.Fragment>
+                                                                <td className="border p-1.5 md:p-2 font-semibold uppercase">{c.paciente || "Sin asignar"}</td>
+                                                                <td className="border p-1.5 md:p-2 font-mono whitespace-nowrap">{c.idPaciente || "N/A"}</td>
+                                                                <td className="border p-1.5 md:p-2">{c.estadoCama}</td>
+                                                                <td className="border p-1.5 md:p-2">{c.diagnostico}</td>
+                                                                <td className="border p-1.5 md:p-2 text-center font-bold text-blue-800 text-sm">{calc.diasInternamiento}</td>
+                                                                <td className="border p-1.5 md:p-2 text-center whitespace-nowrap">{c.fechaPrimeraCirugia ? formatearFechaCR(c.fechaPrimeraCirugia) : "Pendiente"}</td>
+                                                            </React.Fragment>
+                                                        )}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </React.Fragment>
+                            )}
                         </div>
                     )}
 
@@ -842,34 +901,18 @@
                             <div className="bg-white rounded-xl shadow-lg border p-6 w-full">
                                 <h2 className="text-xl font-bold text-blue-900 mb-2 text-center">Cambiar PIN de Acceso</h2>
                                 <p className="text-xs text-gray-500 mb-6 text-center">Esta contraseña es utilizada por todo el personal médico para ingresar al sistema.</p>
-
                                 <form onSubmit={cambiarPinSistema} className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">PIN Actual</label>
-                                        <input type="password" maxLength="4" required value={pinViejoInput} onChange={(e) => setPinViejoInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-center tracking-widest text-lg bg-gray-50" placeholder="••••" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nuevo PIN (4 dígitos)</label>
-                                        <input type="password" maxLength="4" required value={pinNuevoInput} onChange={(e) => setPinNuevoInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-center tracking-widest text-lg bg-gray-50" placeholder="••••" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Confirmar Nuevo PIN</label>
-                                        <input type="password" maxLength="4" required value={pinConfirmarInput} onChange={(e) => setPinConfirmarInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-center tracking-widest text-lg bg-gray-50" placeholder="••••" />
-                                    </div>
-
+                                    <div><input type="password" maxLength="4" required value={pinViejoInput} onChange={(e) => setPinViejoInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-center tracking-widest text-lg bg-gray-50" placeholder="PIN Actual" /></div>
+                                    <div><input type="password" maxLength="4" required value={pinNuevoInput} onChange={(e) => setPinNuevoInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-center tracking-widest text-lg bg-gray-50" placeholder="Nuevo PIN" /></div>
+                                    <div><input type="password" maxLength="4" required value={pinConfirmarInput} onChange={(e) => setPinConfirmarInput(e.target.value)} className="w-full p-2.5 border rounded-lg text-center tracking-widest text-lg bg-gray-50" placeholder="Confirmar Nuevo" /></div>
                                     <div className="flex gap-2 pt-4">
-                                        <button type="button" onClick={() => setVistaActual("listado")} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2.5 rounded-lg text-sm transition">
-                                            Cancelar
-                                        </button>
-                                        <button type="submit" className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow transition">
-                                            Actualizar PIN
-                                        </button>
+                                        <button type="button" onClick={() => setVistaActual("listado")} className="flex-1 bg-gray-200 hover:bg-gray-300 font-bold py-2.5 rounded-lg text-sm">Cancelar</button>
+                                        <button type="submit" className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm">Actualizar</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     )}
-
                 </div>
             );
         }
